@@ -6,14 +6,25 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type status int
+
+const divisor = 4
 
 const (
 	todo status = iota
 	inProgress
 	done
+)
+
+// STYLING
+
+var (
+	columnStyle  = lipgloss.NewStyle().Padding(1, 2)
+	focusedStyle = lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62"))
+	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
 // CUSTOM ITEM
@@ -39,18 +50,36 @@ func (t Task) Description() string {
 // MAIN MODEL
 
 type Model struct {
-	list list.Model
-	err  error
+	focused status
+	lists   []list.Model
+	err     error
+	loaded  bool
 }
 
 // TODO: call this on tea.WindowSizeMsg
-func (m *Model) initList(width, height int) {
-	m.list = list.New([]list.Item{}, list.NewDefaultDelegate(), width, height)
-	m.list.Title = "To Do"
-	m.list.SetItems([]list.Item{
+func (m *Model) initLists(width, height int) {
+	defaultList := list.New([]list.Item{}, list.NewDefaultDelegate(), width/divisor, height-divisor/2)
+	defaultList.SetShowHelp(false)
+	m.lists = []list.Model{defaultList, defaultList, defaultList}
+
+	// Init To dos
+	m.lists[todo].Title = "To Do"
+	m.lists[todo].SetItems([]list.Item{
 		Task{status: todo, title: "Buy Milk", description: "Stawberry milk"},
 		Task{status: todo, title: "Eat Sushi", description: "nigiri"},
 		Task{status: todo, title: "Fold laundry", description: "or wear wrinkly t shirt"},
+	})
+
+	// Init in Progress
+	m.lists[inProgress].Title = "In Progress"
+	m.lists[inProgress].SetItems([]list.Item{
+		Task{status: todo, title: "Write Code", description: "In GO"},
+	})
+
+	// Init done
+	m.lists[done].Title = "Done"
+	m.lists[done].SetItems([]list.Item{
+		Task{status: todo, title: "Stay Cool", description: "as a cucumber"},
 	})
 }
 
@@ -65,15 +94,32 @@ func New() *Model {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.initList(msg.Width, msg.Height)
+		if !m.loaded {
+			m.initLists(msg.Width, msg.Height)
+			m.loaded = true
+		}
 	}
 	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	m.lists[m.focused], cmd = m.lists[m.focused].Update(msg)
 	return m, cmd
 }
 
 func (m Model) View() string {
-	return m.list.View()
+	if m.loaded {
+		todoView := m.lists[todo].View()
+		inProgressView := m.lists[inProgress].View()
+		doneView := m.lists[done].View()
+		switch m.focused {
+		case inProgress:
+			return lipgloss.JoinHorizontal(lipgloss.Left, columnStyle.Render(todoView), focusedStyle.Render(inProgressView), columnStyle.Render(doneView))
+		case done:
+			return lipgloss.JoinHorizontal(lipgloss.Left, columnStyle.Render(todoView), columnStyle.Render(inProgressView), focusedStyle.Render(doneView))
+		default:
+			return lipgloss.JoinHorizontal(lipgloss.Left, focusedStyle.Render(todoView), columnStyle.Render(inProgressView), columnStyle.Render(doneView))
+		}
+	} else {
+		return "Loading..."
+	}
 }
 
 func main() {
